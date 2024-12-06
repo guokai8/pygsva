@@ -16,6 +16,10 @@ setup(
     author="Kai Guo",
     author_email="guokai8@gmail.com",
     description="GSVA package for Python",
+    package_data={
+       'pygsva': ['data/*.csv'],  # Include all CSV files in data directory
+    },
+    include_package_data=True,
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/guokai8/pygsva",

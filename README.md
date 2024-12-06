@@ -65,8 +65,8 @@ python setup.py install --user
 from pygsva import *
 
 # Example usage with default GSVA method
-pbmc=pd.read_csv('pbmc_exp.csv',index_col=0)
-hsko=pd.read_csv('hsko.csv',index_col=0)
+hsko = load_hsko_data()
+pbmc = load_pbmc_data()
 gene_sets = {key: group.iloc[:, 0].tolist() for key, group in hsko.groupby(hsko.iloc[:, 2])}
 ##ssgsea
 params=ssgseaParam(pbmc,gene_sets=gene_sets,remove_constant=False,remove_nz_constant=False,use_sparse=True)
