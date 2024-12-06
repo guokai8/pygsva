@@ -27,12 +27,13 @@ from .zscore import zscore
 from .plage import plage
 from .param import gsvaParam, ssgseaParam, zscoreParam, plageParam
 from .utils import *  # Assuming utility functions are in utils.py
+from .data_loader import load_hsko_data, load_pbmc_data
 
 # Initialize package configuration
 __all__ = [
     "init_cdfs","sigma_factor", "precompute_resolution","max_precompute",
     "gsva", "ssgsea","ssgsea_batched","gsva_enrichment", "zscore", "plage",
-    "gsvaParam", "ssgseaParam", "zscoreParam", "plageParam"
+    "gsvaParam", "ssgseaParam", "zscoreParam", "plageParam",'load_hsko_data', 'load_pbmc_data'
 ]
 
 # Informative package-level docstring
