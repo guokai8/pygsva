@@ -95,6 +95,6 @@ If you use any of the methods in this package, please cite the corresponding art
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-## Contributing
+## Contact
 
-We welcome contributions! Feel free to submit issues, fork the repository, and make pull requests.
+For any questions please contact guokai8@gmail.com or https://github.com/guokai8/pygsva/issues
