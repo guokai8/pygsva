@@ -58,7 +58,11 @@ git clone https://github.com/guokai8/pygsva
 cd pygsva
 python setup.py install --user
 ```
+```
+#Or install from pip
+pip install pygsva
 
+```
 ## Usage
 
 ```python
