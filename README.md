@@ -54,16 +54,32 @@ The `pyGSVA` package provides Python implementations of four single-sample gene 
 ## Installation
 
 ```bash
-pip install pygsva
+git clone https://github.com/guokai8/pygsva
+cd pygsva
+python setup.py install --user
 ```
 
 ## Usage
 
 ```python
-import pygsva
+from pygsva import *
 
 # Example usage with default GSVA method
-results = pygsva.gsva(expr_data, gene_sets, method="gsva")
+pbmc=pd.read_csv('pbmc_exp.csv',index_col=0)
+hsko=pd.read_csv('hsko.csv',index_col=0)
+gene_sets = {key: group.iloc[:, 0].tolist() for key, group in hsko.groupby(hsko.iloc[:, 2])}
+##ssgsea
+params=ssgseaParam(pbmc,gene_sets=gene_sets,remove_constant=False,remove_nz_constant=False,use_sparse=True)
+res=ssgsea(pbmc,gene_sets,use_sparse=True,remove_constant=False,remove_nz_constant=False)
+##gsva
+param=gsvaParam(pbmc,gene_sets=gene_sets,use_sparse=True,kcdf="Poisson",n_jobs=1)
+res=gsva(param)
+##plage
+paramp=plageParam(pbmc,gene_sets=gene_sets,use_sparse=True,min_size=2)
+res=gsva(paramp)
+##zscore
+paramz=zscoreParam(pbmc,gene_sets,use_sparse=True)
+res=gsva(paramz)
 ```
 
 ## References
