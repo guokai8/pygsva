@@ -1,5 +1,5 @@
 
-# pyGSVA: Gene Set Variation Analysis in Python
+# pygsva: Gene Set Variation Analysis in Python
 
 Gene Set Variation Analysis (GSVA) is a powerful gene set enrichment method designed for single-sample analysis. It enables pathway-centric analyses of molecular data by shifting the functional unit of analysis from individual genes to gene sets. This approach is particularly useful for bulk microarray, RNA-seq, and other molecular profiling data types, providing a pathway-level view of biological activity.
 
