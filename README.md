@@ -17,7 +17,7 @@ Additionally, GSVA enables pathway comparisons with other molecular data types, 
 
 ## Methods
 
-The `pyGSVA` package provides Python implementations of four single-sample gene set enrichment methods:
+The `pygsva` package provides Python implementations of four single-sample gene set enrichment methods:
 
 ### 1. **PLAGE** (Pathway Level Analysis of Gene Expression)
    - **Reference**: Tomfohr, Lu, and Kepler (2005)
