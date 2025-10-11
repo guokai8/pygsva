@@ -789,10 +789,10 @@ def compute_gsva_scores(R, gene_sets_idx, tau, max_diff, abs_ranking,
             
         if isinstance(R, pd.DataFrame):
             es = Parallel(n_jobs=n_jobs)(
-                delayed(lambda j: process_column_scores(
+                delayed(process_column_scores)(
                     R.iloc[:, j].values, gene_sets_idx, max_diff, abs_ranking, tau,
                     use_sparse, any_na, na_use, min_size
-                ))
+                )
                 for j in range(n)
             )
         else:
