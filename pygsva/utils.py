@@ -39,15 +39,19 @@ def precomputed_cdf(x, sigma):
         return 1.0 - cdf if v < 0 else cdf
         
 def precomputed_cdf_vectorized(diff_matrix, bw):
+    """Fully vectorized CDF computation using precomputed values"""
     scaled_x = np.abs(diff_matrix / bw)
-    idx = np.clip((scaled_x * precompute_resolution / max_precompute).astype(int), 
+    idx = np.clip((scaled_x * precompute_resolution / max_precompute).astype(int),
                  0, precompute_resolution - 1)
-    result = np.zeros_like(diff_matrix)
-    for i in range(result.shape[0]):
-        for j in range(result.shape[1]):
-            result[i,j] = precomputed_values[idx[i,j]]
-            if diff_matrix[i,j] < 0:
-                result[i,j] = 1 - result[i,j]
+
+    # OPTIMIZATION: Use NumPy array indexing instead of nested loops
+    precomputed_array = np.array(precomputed_values)
+    result = precomputed_array[idx]
+
+    # Handle negative values using boolean masking
+    negative_mask = diff_matrix < 0
+    result[negative_mask] = 1.0 - result[negative_mask]
+
     return result
 
 def check_rownames(expr):
@@ -615,32 +619,27 @@ def matrix_density_vectorized(density_data, test_data, n_density_samples,
                 sd_val = sd_plain(density_matrix[i], n_density_samples)
                 bw[i] = sd_val / sigma_factor if sd_val > sys.float_info.epsilon else 0.5
             
-            # 对每个基因进行向量化计算
+            # OPTIMIZATION: Vectorized computation per gene
             for i in range(n_genes):
                 x = density_matrix[i].reshape(1, -1)  # 1 x n_density
                 y = test_matrix[i].reshape(-1, 1)     # n_test x 1
-                
+
                 # 计算所有差值
                 diff_matrix = y - x  # n_test x n_density
-                
-                # 计算所有CDF值
-                cdf_matrix = np.zeros_like(diff_matrix)
-                for j in range(n_test_samples):
-                    for k in range(n_density_samples):
-                        cdf_val = precomputed_cdf(diff_matrix[j,k], bw[i])
-                        if cdf_val is not None:
-                            cdf_matrix[j,k] = cdf_val
-                
+
+                # OPTIMIZATION: Use vectorized CDF computation instead of nested loops
+                cdf_matrix = precomputed_cdf_vectorized(diff_matrix, bw[i])
+
                 # 计算每行的平均值
                 left_tails = np.mean(cdf_matrix, axis=1)
-                
+
                 # 计算logodds
                 valid_mask = (left_tails > 0) & (left_tails < 1)
                 temp_result = np.full(n_test_samples, np.nan)
                 temp_result[valid_mask] = -np.log((1.0 - left_tails[valid_mask]) / left_tails[valid_mask])
-                
+
                 result[i * n_test_samples:(i + 1) * n_test_samples] = temp_result
-                
+
                 if verbose and (i + 1) % 100 == 0:
                     print(f"Processed {i + 1}/{n_genes} genes")
                     

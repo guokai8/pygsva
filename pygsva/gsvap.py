@@ -440,7 +440,7 @@ def compute_gsva_ranks(expr, kcdf, kcdf_min_ssize,
 def gsva_ranks(param, use_sparse=False, verbose=True,sparse_output=False, n_jobs=1):
     """
     Calculate GSVA ranks
-    
+
     Parameters:
     -----------
     param : gsvaParam object
@@ -449,14 +449,14 @@ def gsva_ranks(param, use_sparse=False, verbose=True,sparse_output=False, n_jobs
         Whether to print progress messages
     n_jobs : int
         Number of parallel jobs to run
-        
+
     Returns:
     --------
     dict
         Dictionary containing GSVA ranks and parameters, with expr_data as DataFrame
     """
     import pandas as pd
-    
+
     if verbose:
         print("Starting GSVA ranks calculation")
 
