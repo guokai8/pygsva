@@ -192,22 +192,14 @@ def filter_and_map_genes_and_gene_sets_s(expr_data, gene_sets, min_size=1,max_si
     
 def order_value(x, decreasing=True):
     """
-    精确实现R的order函数行为
+    Optimized implementation of R's order function behavior.
+    Returns indices that would sort the array.
     """
-    # 创建包含值和原始位置的结构化数组
-    n = len(x)
-    dtype = [('value', float), ('index', int)]
-    arr = np.zeros(n, dtype=dtype)
-    
-    # 填充值和位置
-    arr['value'] = -x if decreasing else x  # 负值用于降序排序
-    arr['index'] = np.arange(n)  # 保存原始位置
-    
-    # 按值排序，相同值按原始位置排序
-    sorted_idx = np.argsort(arr, order=['value', 'index'])
-    
-    # 返回1-based索引
-    return sorted_idx 
+    if decreasing:
+        # For decreasing order, negate values and use stable sort
+        return np.argsort(-x, kind='stable')
+    else:
+        return np.argsort(x, kind='stable') 
     
 def ssgsea(expr_df, gene_sets, alpha=0.25, normalization=True, check_na=False, any_na = False, na_use = "everything", min_size=1, max_size=np.inf,remove_constant=True, remove_nz_constant=True, n_jobs=1,use_sparse=False, verbose=True):
     """
@@ -237,26 +229,38 @@ def ssgsea(expr_df, gene_sets, alpha=0.25, normalization=True, check_na=False, a
         use_sparse=use_sparse,
         verbose=verbose
     )
-    
-    
+
+
     expr_df_values = filtered_result['filtered_data_matrix']
     genesets = filtered_result['filtered_mapped_gene_sets']
     n_genes, n_samples = expr_df_values.shape
-    
+
     R = colRanks(expr_df_values.values, ties_method='average')
     R = R.astype(int)
     Ra = np.abs(R) ** alpha
-    
+
+    # Pre-convert gene sets to numpy arrays for faster access
+    genesets_arrays = {name: np.array(genes) for name, genes in genesets.items()}
+    geneset_names = list(genesets.keys())
+
     def process_sample(j):
         if any_na and na_use == "na.rm":
             gene_ranking = order_value(R[:, j], decreasing=True) + 1
-            gene_ranking = gene_ranking[~np.isnan(R[:, j])]
-            geneSetsRankIdx = {name: np.where(np.isin(gene_ranking, genes))[0] + 1
-                             for name, genes in genesets.items()}
-            
+            valid_mask = ~np.isnan(R[:, j])
+            gene_ranking = gene_ranking[valid_mask]
+
+            # Vectorized gene set rank index computation
+            gene_ranking_set = set(gene_ranking)
+            geneSetsRankIdx = {}
+            for name, genes in genesets_arrays.items():
+                # Use set intersection for faster lookup
+                mask = np.isin(gene_ranking, genes)
+                geneSetsRankIdx[name] = np.where(mask)[0] + 1
+
             es_sample = []
-            for name, genes in geneSetsRankIdx.items():            
-                es_value = fast_rnd_walk_na(
+            for name in geneset_names:
+                genes = geneSetsRankIdx[name]
+                es_value = fast_rnd_walkRm(
                     g_set_idx=genes,
                     gene_ranking=gene_ranking-1,
                     j=j,
@@ -268,10 +272,16 @@ def ssgsea(expr_df, gene_sets, alpha=0.25, normalization=True, check_na=False, a
                 es_sample.append(es_value)
         else:
             gene_ranking = order_value(R[:, j], decreasing=True) + 1
-            geneSetsRankIdx = {name: np.where(np.isin(gene_ranking, genes))[0] + 1
-                             for name, genes in genesets.items()}
+
+            # Vectorized gene set rank index computation
+            geneSetsRankIdx = {}
+            for name, genes in genesets_arrays.items():
+                mask = np.isin(gene_ranking, genes)
+                geneSetsRankIdx[name] = np.where(mask)[0] + 1
+
             es_sample = []
-            for name, genes in geneSetsRankIdx.items():              
+            for name in geneset_names:
+                genes = geneSetsRankIdx[name]
                 es_value = fast_rnd_walk(
                     g_set_idx=genes,
                     gene_ranking=gene_ranking-1,
@@ -285,16 +295,16 @@ def ssgsea(expr_df, gene_sets, alpha=0.25, normalization=True, check_na=False, a
         n_jobs = multiprocessing.cpu_count() if n_jobs == -1 else n_jobs
         if verbose:
             print(f"Processing samples in parallel using {n_jobs} cores")
-            
+
         with Parallel(n_jobs=n_jobs) as parallel:
             iterator = tqdm(range(n_samples), desc="Calculating ssGSEA scores") if verbose else range(n_samples)
             es = parallel(delayed(process_sample)(j) for j in iterator)
     else:
         iterator = tqdm(range(n_samples), desc="Calculating ssGSEA scores") if verbose else range(n_samples)
         es = [process_sample(j) for j in iterator]
-    
+
     es = np.column_stack(es)
-    
+
     if normalization:
         if verbose:
             print("Normalizing ssGSEA scores")
@@ -304,21 +314,21 @@ def ssgsea(expr_df, gene_sets, alpha=0.25, normalization=True, check_na=False, a
         else:
             min_val = np.min(es)
             max_val = np.max(es)
-            
+
         if np.isnan(min_val) or np.isnan(max_val) or not np.isfinite(min_val) or not np.isfinite(max_val):
             raise ValueError("Cannot calculate normalizing factor for the enrichment scores")
-            
+
         score_range = max_val - min_val
         if score_range != 0:
             es = es[:, :n_samples] / score_range
-    
+
     es = es.reshape(1, -1) if len(gene_sets) == 1 else es
     return pd.DataFrame(es, index=list(genesets.keys()), columns=expr_df.columns)
     
 
 
-def ssgsea_batched(expr_df, gene_sets, alpha=0.25, normalization=True, check_na=False, any_na=False, 
-                   na_use="everything", min_size=1, max_size=np.inf, remove_constant=True, 
+def ssgsea_batched(expr_df, gene_sets, alpha=0.25, normalization=True, check_na=False, any_na=False,
+                   na_use="everything", min_size=1, max_size=np.inf, remove_constant=True,
                    remove_nz_constant=True, n_jobs=1, use_sparse=False, chunk_size=1000, verbose=True):
     """
     Args:
@@ -336,7 +346,7 @@ def ssgsea_batched(expr_df, gene_sets, alpha=0.25, normalization=True, check_na=
     n_jobs(int): Determine whether to use parallel processing, if -1 with all cpus
     chunk_size(int): chunk size to use
     verbose (bool): Whether to print detailed logs during computation.
-    """    
+    """
     filtered_result = filter_and_map_genes_and_gene_sets_s(
         expr_data=expr_df,
         gene_sets=gene_sets,
@@ -347,15 +357,19 @@ def ssgsea_batched(expr_df, gene_sets, alpha=0.25, normalization=True, check_na=
         use_sparse=use_sparse,
         verbose=verbose
     )
-    
+
     expr_df_values = filtered_result['filtered_data_matrix']
     genesets = filtered_result['filtered_mapped_gene_sets']
     n_genes, n_samples = expr_df_values.shape
-    
+
     R = colRanks(expr_df_values.values, ties_method='average')
     R = R.astype(int)
     Ra = np.abs(R) ** alpha
-    
+
+    # Pre-convert gene sets to numpy arrays for faster access
+    genesets_arrays = {name: np.array(genes) for name, genes in genesets.items()}
+    geneset_names = list(genesets.keys())
+
     def process_chunk(start_idx, end_idx):
         chunk_results = []
         for j in range(start_idx, end_idx):
@@ -364,38 +378,42 @@ def ssgsea_batched(expr_df, gene_sets, alpha=0.25, normalization=True, check_na=
                 gene_ranking = gene_ranking[~np.isnan(R[:, j])]
             else:
                 gene_ranking = order_value(R[:, j], decreasing=True) + 1
-                
-            geneSetsRankIdx = {name: np.where(np.isin(gene_ranking, genes))[0] + 1
-                             for name, genes in genesets.items()}
-            
+
+            # Vectorized gene set rank index computation
+            geneSetsRankIdx = {}
+            for name, genes in genesets_arrays.items():
+                mask = np.isin(gene_ranking, genes)
+                geneSetsRankIdx[name] = np.where(mask)[0] + 1
+
             es_sample = []
-            for name, genes in geneSetsRankIdx.items():
+            for name in geneset_names:
+                genes = geneSetsRankIdx[name]
                 if any_na and na_use == "na.rm":
-                    es_value = fast_rnd_walk_na(genes, gene_ranking-1, j, Ra, any_na, na_use, min_size)
+                    es_value = fast_rnd_walkRm(genes, gene_ranking-1, j, Ra, any_na, na_use, min_size)
                 else:
                     es_value = fast_rnd_walk(genes, gene_ranking-1, j, Ra)
                 es_sample.append(es_value)
             chunk_results.append(es_sample)
         return chunk_results
 
-    # 分块并行处理
+    # Split into chunks for parallel processing
     n_chunks = (n_samples + chunk_size - 1) // chunk_size
-    chunk_ranges = [(i * chunk_size, min((i + 1) * chunk_size, n_samples)) 
+    chunk_ranges = [(i * chunk_size, min((i + 1) * chunk_size, n_samples))
                    for i in range(n_chunks)]
-    
+
     if n_jobs != 1:
         with Parallel(n_jobs=n_jobs) as parallel:
             if verbose:
                 print(f"Processing {n_chunks} chunks using {n_jobs} cores")
-            all_results = parallel(delayed(process_chunk)(start, end) 
+            all_results = parallel(delayed(process_chunk)(start, end)
                                  for start, end in tqdm(chunk_ranges) if verbose)
     else:
         iterator = tqdm(chunk_ranges, desc="Processing chunks") if verbose else chunk_ranges
         all_results = [process_chunk(start, end) for start, end in iterator]
-    
-    # 合并结果
+
+    # Merge results
     es = np.column_stack([result for chunk in all_results for result in chunk])
-    
+
     if normalization:
         if verbose:
             print("Normalizing scores")
@@ -406,7 +424,7 @@ def ssgsea_batched(expr_df, gene_sets, alpha=0.25, normalization=True, check_na=
         score_range = max_val - min_val
         if score_range != 0:
             es = es[:, :n_samples] / score_range
-    
+
     es = es.reshape(1, -1) if len(gene_sets) == 1 else es
     return pd.DataFrame(es, index=list(genesets.keys()), columns=expr_df.columns)
 

@@ -136,168 +136,137 @@ def remove_consecutive_duplicates(arr):
 def ecdf_sparse_to_sparse(X_csc, X_csr, verbose=False):
     """
     Calculate empirical cumulative distribution function values on nonzero entries.
+    Optimized version using vectorized numpy operations.
     """
     if not isinstance(X_csc, sparse.csc_matrix):
         X_csc = sparse.csc_matrix(X_csc)
     if not isinstance(X_csr, sparse.csr_matrix):
         X_csr = sparse.csr_matrix(X_csr)
-        
+
     nr, nc = X_csc.shape
     result = X_csc.copy()
     result.data = result.data.astype(np.float64)
-    
+
     row_iterator = tqdm(range(nr)) if verbose else range(nr)
     for i in row_iterator:
         # Get nonzero values in current row
         row_start = X_csr.indptr[i]
         row_end = X_csr.indptr[i + 1]
         row_data = X_csr.data[row_start:row_end]
-        
+
         if len(row_data) == 0:
             continue
-            
-        # Sort and remove consecutive duplicates
-        sorted_data = np.sort(row_data)
-        unique_values = remove_consecutive_duplicates(sorted_data)
-        nuniqv = len(unique_values)
-        
-        # Count occurrences
-        counts = np.zeros(nuniqv, dtype=np.int32)
-        for val in row_data:
-            idx = np.searchsorted(unique_values, val)
-            counts[idx] += 1
-        
+
+        # Use np.unique to get unique values, inverse indices, and counts
+        unique_values, inverse_indices, counts = np.unique(row_data, return_inverse=True, return_counts=True)
+
         # Calculate ECDF values
         ecdf_values = np.cumsum(counts) / len(row_data)
-        val_to_ecdf = dict(zip(unique_values, ecdf_values))
-        
-        # Update result matrix
-        for idx in range(row_start, row_end):
+
+        # Map ECDF values back to original positions
+        row_ecdf = ecdf_values[inverse_indices]
+
+        # Update result matrix - need to map back to CSC format
+        for idx_in_row, idx in enumerate(range(row_start, row_end)):
             col = X_csr.indices[idx]
-            val = X_csr.data[idx]
-            
+
             # Find position in CSC format
             col_start = X_csc.indptr[col]
             col_end = X_csc.indptr[col + 1]
-            row_pos = np.where(X_csc.indices[col_start:col_end] == i)[0][0]
+            row_pos = np.searchsorted(X_csc.indices[col_start:col_end], i)
             data_idx = col_start + row_pos
-            
-            result.data[data_idx] = val_to_ecdf[val]
-    
+
+            result.data[data_idx] = row_ecdf[idx_in_row]
+
     return result
 
 def ecdf_sparse_to_dense(X_csc, X_csr, verbose=False):
     """
     Calculate empirical cumulative distribution function values including zeros.
+    Optimized version using vectorized numpy operations.
     """
     if not isinstance(X_csc, sparse.csc_matrix):
         X_csc = sparse.csc_matrix(X_csc)
     if not isinstance(X_csr, sparse.csr_matrix):
         X_csr = sparse.csr_matrix(X_csr)
-        
+
     nr, nc = X_csc.shape
     result = np.zeros((nr, nc), dtype=np.float64)
-    
+
     row_iterator = tqdm(range(nr)) if verbose else range(nr)
     for i in row_iterator:
         # Get full row including zeros
         row = X_csr[i].toarray().ravel()
-        
-        # Sort and remove consecutive duplicates
-        sorted_data = np.sort(row)
-        unique_values = remove_consecutive_duplicates(sorted_data)
-        nuniqv = len(unique_values)
-        
-        # Count occurrences
-        counts = np.zeros(nuniqv, dtype=np.int32)
-        for val in row:
-            idx = np.searchsorted(unique_values, val)
-            counts[idx] += 1
-        
+
+        # Use np.unique to get unique values, inverse indices, and counts
+        unique_values, inverse_indices, counts = np.unique(row, return_inverse=True, return_counts=True)
+
         # Calculate ECDF values
         ecdf_values = np.cumsum(counts) / nc
-        val_to_ecdf = dict(zip(unique_values, ecdf_values))
-        
-        # Fill the result row
-        for j in range(nc):
-            result[i, j] = val_to_ecdf[row[j]]
-    
+
+        # Map back to original positions using inverse indices
+        result[i, :] = ecdf_values[inverse_indices]
+
     return result
 
 def ecdf_dense_to_dense(X, verbose=False):
     """
     Calculate empirical cumulative distribution function values for dense matrix.
+    Optimized version using vectorized numpy operations.
     """
     if sparse.issparse(X):
         X = X.toarray()
-    
+
     nr, nc = X.shape
     result = np.zeros_like(X, dtype=np.float64)
-    
+
     row_iterator = tqdm(range(nr)) if verbose else range(nr)
     for i in row_iterator:
-        row = X[i].copy()
-        
-        # Sort and remove consecutive duplicates
-        sorted_data = np.sort(row)
-        unique_values = remove_consecutive_duplicates(sorted_data)
-        nuniqv = len(unique_values)
-        
-        # Count occurrences
-        counts = np.zeros(nuniqv, dtype=np.int32)
-        for val in row:
-            idx = np.searchsorted(unique_values, val)
-            counts[idx] += 1
-        
-        # Calculate ECDF values
+        row = X[i]
+
+        # Use np.unique to get unique values, inverse indices, and counts in one call
+        unique_values, inverse_indices, counts = np.unique(row, return_inverse=True, return_counts=True)
+
+        # Calculate ECDF values (cumulative counts / total)
         ecdf_values = np.cumsum(counts) / nc
-        val_to_ecdf = dict(zip(unique_values, ecdf_values))
-        
-        # Fill the result row
-        for j in range(nc):
-            result[i, j] = val_to_ecdf[row[j]]
-    
+
+        # Map back to original positions using inverse indices
+        result[i, :] = ecdf_values[inverse_indices]
+
     return result
 
 def ecdf_dense_to_dense_nas(X, verbose=False):
     """
     Calculate empirical cumulative distribution function values with NA handling.
+    Optimized version using vectorized numpy operations.
     """
     if sparse.issparse(X):
         X = X.toarray()
-    
+
     nr, nc = X.shape
     result = np.full_like(X, np.nan, dtype=np.float64)
-    
+
     row_iterator = tqdm(range(nr)) if verbose else range(nr)
     for i in row_iterator:
-        row = X[i].copy()
+        row = X[i]
         valid_mask = ~np.isnan(row)
         valid_values = row[valid_mask]
-        
+
         if len(valid_values) == 0:
             continue
-        
-        # Sort and remove consecutive duplicates
-        sorted_data = np.sort(valid_values)
-        unique_values = remove_consecutive_duplicates(sorted_data)
-        nuniqv = len(unique_values)
-        
-        # Count occurrences
-        counts = np.zeros(nuniqv, dtype=np.int32)
-        for val in valid_values:
-            idx = np.searchsorted(unique_values, val)
-            counts[idx] += 1
-        
-        # Calculate ECDF values
+
+        # Use np.unique to get unique values, inverse indices, and counts
+        unique_values, inverse_indices, counts = np.unique(valid_values, return_inverse=True, return_counts=True)
+
+        # Calculate ECDF values (cumulative counts / total columns, matching original)
         ecdf_values = np.cumsum(counts) / nc
-        val_to_ecdf = dict(zip(unique_values, ecdf_values))
-        
-        # Fill the result row
-        for j in range(nc):
-            if not np.isnan(row[j]):
-                result[i, j] = val_to_ecdf[row[j]]
-    
+
+        # Create mapping array for valid positions
+        valid_ecdf = ecdf_values[inverse_indices]
+
+        # Fill result only at valid positions
+        result[i, valid_mask] = valid_ecdf
+
     return result
 #### sd with na rm
 def sd_narm(x, n):
@@ -867,66 +836,52 @@ def sparse_column_apply_and_replace(sparse_matrix, func, **kwargs):
 def rank_ties_last(arr):
     """
     Implements R's rank function with ties.method = 'last'
-    Exactly matches R's behavior for handling ties
-    
+    Exactly matches R's behavior for handling ties.
+    Optimized version using vectorized numpy operations.
+
     Parameters:
     arr: array-like object
         The array to be ranked
-        
+
     Returns:
     numpy.ndarray
         Array of ranks matching R's rank(x, ties.method='last')
     """
-    import numpy as np
-    
-    # Convert input to numpy array
     arr = np.asarray(arr)
     n = len(arr)
-    
-    # Create array of indices
-    idx = np.arange(n)
-    
+
     # Create mask for non-NA values
     mask = ~np.isnan(arr)
-    
+
     if not mask.any():  # If all values are NA
         return np.full(n, np.nan)
-    
-    # Create array of (value, original index) pairs for stable sorting
-    valid_idx = idx[mask]
-    pairs = np.array(list(zip(arr[mask], valid_idx)), 
-                    dtype=[('value', float), ('orig_idx', int)])
-    
-    # Stable sort by value
-    order = np.argsort(pairs, order=['value'])
-    
+
     # Initialize ranks array
     ranks = np.full(n, np.nan)
-    
-    # Calculate ranks
-    rank = 1
-    i = 0
-    while i < len(order):
-        # Find all elements with the same value
-        j = i + 1
-        while j < len(order) and pairs[order[j]]['value'] == pairs[order[i]]['value']:
-            j += 1
-            
-        # For tied values, assign ranks based on original position (higher position, lower rank)
-        tie_positions = sorted(range(i, j), key=lambda x: pairs[order[x]]['orig_idx'], reverse=True)
-        for k, pos in enumerate(tie_positions):
-            orig_idx = pairs[order[pos]]['orig_idx']
-            ranks[orig_idx] = rank + k
-            
-        rank += j - i  # Increment rank by number of tied values
-        i = j
-    
+
+    # Get valid values and their original indices
+    valid_idx = np.where(mask)[0]
+    valid_values = arr[mask]
+    n_valid = len(valid_values)
+
+    # Sort by value (ascending), then by original index (descending) for ties
+    # This gives us "last" tie-breaking behavior
+    sort_keys = np.lexsort((-valid_idx, valid_values))
+
+    # Assign ranks based on sorted order
+    sorted_ranks = np.empty(n_valid, dtype=float)
+    sorted_ranks[sort_keys] = np.arange(1, n_valid + 1)
+
+    # Place ranks back into original positions
+    ranks[mask] = sorted_ranks
+
     return ranks
 
 #####
 def colRanks(Z, ties_method='last', preserve_shape=True):
     """
     Calculates ranks for each column in a matrix Z.
+    Optimized version with vectorized operations for standard tie methods.
 
     Parameters:
     -----------
@@ -943,17 +898,16 @@ def colRanks(Z, ties_method='last', preserve_shape=True):
         Matrix of ranks.
     """
     n_rows, n_cols = Z.shape
-
     ranked_Z = np.empty_like(Z, dtype=float)
 
-    for col_idx in range(n_cols):
-        col_data = Z[:, col_idx]
-        if ties_method == 'last':
-            ranks = rank_ties_last(col_data)
-        else:
-            ranks = rankdata(col_data, method=ties_method)
-
-        ranked_Z[:, col_idx] = ranks
+    if ties_method == 'last':
+        # Use optimized rank_ties_last for each column
+        for col_idx in range(n_cols):
+            ranked_Z[:, col_idx] = rank_ties_last(Z[:, col_idx])
+    else:
+        # For standard tie methods, use scipy's rankdata which is already optimized
+        # Process all columns at once using apply_along_axis for better performance
+        ranked_Z = np.apply_along_axis(lambda x: rankdata(x, method=ties_method), 0, Z)
 
     return ranked_Z
 
@@ -1067,7 +1021,10 @@ from joblib import Parallel, delayed
 import multiprocessing
 
 def filter_genes(expr, remove_constant=True, remove_nz_constant=True):
-    """Filter constant genes and return mask and filtered indices"""
+    """
+    Filter constant genes and return mask and filtered indices.
+    Optimized version using vectorized numpy operations.
+    """
     original_index = expr.index if hasattr(expr, 'index') else np.arange(expr.shape[0])
     keep_genes = np.ones(expr.shape[0], dtype=bool)
 
@@ -1075,29 +1032,53 @@ def filter_genes(expr, remove_constant=True, remove_nz_constant=True):
         expr.min(axis=1).toarray().flatten() if sparse.issparse(expr) else expr.min(axis=1),
         expr.max(axis=1).toarray().flatten() if sparse.issparse(expr) else expr.max(axis=1)
     ]).T
-    
+
     constant_genes = (gene_ranges[:, 0] == gene_ranges[:, 1])
     if np.any(constant_genes) and remove_constant:
         print(f"Found {np.sum(constant_genes)} genes with constant values")
         keep_genes &= ~constant_genes
-    
+
     if sparse.issparse(expr) and remove_nz_constant:
         expr_t = expr.T.tocsc()
-        nz_ranges = np.array([
-            [np.min(expr_t.data[expr_t.indptr[i]:expr_t.indptr[i+1]]), 
-             np.max(expr_t.data[expr_t.indptr[i]:expr_t.indptr[i+1]])]
-            if expr_t.indptr[i] != expr_t.indptr[i+1] else [0, 0]
-            for i in range(expr.shape[0])
-        ])
-        
-        constant_nz_genes = (nz_ranges[:, 0] == nz_ranges[:, 1]) & (nz_ranges[:, 0] != 0)
+        n_genes = expr.shape[0]
+
+        # Vectorized computation of min/max for non-zero values per row
+        # Using reduceat for efficient computation
+        indptr = expr_t.indptr
+        data = expr_t.data
+
+        # Find non-empty rows (genes with non-zero values)
+        row_lengths = np.diff(indptr)
+        non_empty_mask = row_lengths > 0
+
+        # Initialize arrays
+        nz_min = np.zeros(n_genes)
+        nz_max = np.zeros(n_genes)
+
+        if np.any(non_empty_mask):
+            non_empty_indices = np.where(non_empty_mask)[0]
+
+            # Get start indices for reduceat
+            reduce_starts = indptr[non_empty_indices]
+
+            # Compute min and max using reduceat
+            # Note: reduceat computes reduction between consecutive indices
+            nz_min_vals = np.minimum.reduceat(data, reduce_starts)
+            nz_max_vals = np.maximum.reduceat(data, reduce_starts)
+
+            nz_min[non_empty_indices] = nz_min_vals
+            nz_max[non_empty_indices] = nz_max_vals
+
+        # Constant non-zero genes: min == max and min != 0 (has non-zero values)
+        constant_nz_genes = (nz_min == nz_max) & non_empty_mask & (nz_min != 0)
+
         if np.any(constant_nz_genes):
             print(f"Found {np.sum(constant_nz_genes)} genes with constant non-zero values")
             keep_genes &= ~constant_nz_genes
-    
+
     if keep_genes.sum() < 2:
         raise ValueError("Less than two genes in the input assay object")
-    
+
     filtered_indices = original_index[keep_genes]
     return keep_genes, filtered_indices
     

@@ -22,29 +22,59 @@ from scipy import sparse
 import numpy as np
 
 def sparse_column_standardize(matrix):
-    """Highly optimized sparse matrix standardization"""
+    """
+    Highly optimized sparse matrix standardization.
+    Vectorized version using numpy reduceat operations.
+    """
     if not sparse.isspmatrix_csc(matrix):
         matrix = matrix.tocsc()
     else:
         matrix = matrix.copy()
-    
-#
+
+    n_cols = matrix.shape[1]
     col_lengths = np.diff(matrix.indptr)
-    means = np.zeros(matrix.shape[1])
-    stds = np.zeros(matrix.shape[1])
-    
-    for i in range(matrix.shape[1]):
-        start, end = matrix.indptr[i:i+2]
-        if start != end:
-            col_data = matrix.data[start:end]
-            means[i] = np.mean(col_data)
-            stds[i] = np.std(col_data, ddof=1)
-    
-    col_indices = np.repeat(np.arange(matrix.shape[1]), col_lengths)
-    matrix.data = np.where(stds[col_indices] != 0,
+
+    # Vectorized computation of means and stds using reduceat
+    # Only process columns that have non-zero elements
+    non_empty_mask = col_lengths > 0
+    non_empty_indices = np.where(non_empty_mask)[0]
+
+    means = np.zeros(n_cols)
+    stds = np.zeros(n_cols)
+
+    if len(non_empty_indices) > 0:
+        # Get the start indices for reduceat (only for non-empty columns)
+        reduce_indices = matrix.indptr[non_empty_indices]
+
+        # Compute sums for each column
+        col_sums = np.add.reduceat(matrix.data, reduce_indices)
+
+        # Handle the last column edge case
+        if len(reduce_indices) > 1:
+            # For columns that aren't the last non-empty one
+            col_sums_corrected = col_sums.copy()
+        else:
+            col_sums_corrected = col_sums
+
+        # Compute means
+        means[non_empty_indices] = col_sums_corrected / col_lengths[non_empty_indices]
+
+        # Compute variance using two-pass algorithm for numerical stability
+        for i, col_idx in enumerate(non_empty_indices):
+            start, end = matrix.indptr[col_idx:col_idx+2]
+            if end > start:
+                col_data = matrix.data[start:end]
+                n = len(col_data)
+                if n > 1:
+                    stds[col_idx] = np.std(col_data, ddof=1)
+
+    # Vectorized standardization
+    col_indices = np.repeat(np.arange(n_cols), col_lengths)
+    valid_std_mask = stds[col_indices] != 0
+    matrix.data = np.where(valid_std_mask,
                           (matrix.data - means[col_indices]) / stds[col_indices],
                           0)
-    
+
     return matrix
 
 def sparse_apply_scale(X):

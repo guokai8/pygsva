@@ -517,8 +517,9 @@ def gsva_rnd_walk(gsetidx: np.ndarray,
                   tau: float = 1.0,
                   return_walkstat: bool = False) -> Union[Tuple[float, float], Tuple[np.ndarray, float, float]]:
     """
-    Perform random walk for GSVA calculation
-    
+    Perform random walk for GSVA calculation.
+    Optimized version using vectorized numpy operations.
+
     Parameters:
     -----------
     gsetidx : np.ndarray
@@ -531,7 +532,7 @@ def gsva_rnd_walk(gsetidx: np.ndarray,
         Weighting factor
     return_walkstat : bool
         Whether to return full walk statistics
-        
+
     Returns:
     --------
     walkstat : np.ndarray, optional
@@ -543,42 +544,44 @@ def gsva_rnd_walk(gsetidx: np.ndarray,
     """
     n = len(decordstat)
     k = len(gsetidx)
-    
-    # Get ranks of genes in gene set
-    gsetrnk = decordstat[gsetidx - 1]  # Convert to 0-based indexing
-    
+
+    # Get ranks of genes in gene set (convert to 0-based indexing)
+    gsetidx_0based = gsetidx - 1
+    gsetrnk = decordstat[gsetidx_0based].astype(int)
+
     # Initialize step CDFs
     stepcdfingeneset = np.zeros(n)
     stepcdfoutgeneset = np.ones(n)
-    
-    # Set values for genes in gene set
-    for i in range(k):
-        rank_idx = gsetrnk[i] - 1  # Convert to 0-based indexing
-        if tau == 1:
-            stepcdfingeneset[rank_idx] = symrnkstat[gsetidx[i] - 1]
-        else:
-            stepcdfingeneset[rank_idx] = np.power(symrnkstat[gsetidx[i] - 1], tau)
-        stepcdfoutgeneset[rank_idx] = 0
-    
+
+    # Vectorized: Set values for genes in gene set
+    rank_indices = gsetrnk - 1  # Convert to 0-based indexing
+
+    if tau == 1:
+        stepcdfingeneset[rank_indices] = symrnkstat[gsetidx_0based]
+    else:
+        stepcdfingeneset[rank_indices] = np.power(symrnkstat[gsetidx_0based], tau)
+
+    stepcdfoutgeneset[rank_indices] = 0
+
     # Compute cumulative sums
     stepcdfingeneset = np.cumsum(stepcdfingeneset)
     stepcdfoutgeneset = np.cumsum(stepcdfoutgeneset)
-    
+
     walkstatpos = walkstatneg = np.nan
     walkstat = None
-    
+
     if stepcdfingeneset[-1] > 0 and stepcdfoutgeneset[-1] > 0:
         # Calculate walking statistic
-        wlkstat = (stepcdfingeneset / stepcdfingeneset[-1] - 
+        wlkstat = (stepcdfingeneset / stepcdfingeneset[-1] -
                   stepcdfoutgeneset / stepcdfoutgeneset[-1])
-        
+
         if return_walkstat:
             walkstat = wlkstat
-            
+
         # Get maximum deviations
         walkstatpos = np.max(wlkstat)
         walkstatneg = np.min(wlkstat)
-    
+
     if return_walkstat:
         return walkstat if walkstat is not None else np.full(n, np.nan), walkstatpos, walkstatneg
     return walkstatpos, walkstatneg
@@ -591,67 +594,68 @@ def gsva_rnd_walk_nas(gsetidx: np.ndarray,
                       minsize: int = 5,
                       return_walkstat: bool = False) -> Tuple[Union[np.ndarray, None], float, float, bool]:
     """
-    Perform random walk for GSVA calculation with NA handling
+    Perform random walk for GSVA calculation with NA handling.
+    Optimized version using vectorized numpy operations.
     """
     n = len(decordstat)
     k = len(gsetidx)
     walkstat = None
     walkstatpos = walkstatneg = np.nan
     wna = False
-    
-    # 确保索引是整数
+
+    # Ensure indices are integers
     gsetidx = gsetidx.astype(int)
-    
-    # Remove NAs from gene set
+
+    # Remove NAs from gene set (convert to 0-based for indexing)
     valid_mask = ~np.isnan(decordstat[gsetidx - 1])
     gsetidx_wonas = gsetidx[valid_mask]
     k_notna = len(gsetidx_wonas)
-    
+
     # Handle NAs based on na_use parameter
     if k_notna < k and na_use < 3:  # everything or all.obs
         if return_walkstat:
             return np.full(n, np.nan), np.nan, np.nan, False
         return None, np.nan, np.nan, False
-    
+
     if k_notna >= minsize:
-        # Get ranks of non-NA genes (确保是整数)
-        gsetrnk = decordstat[gsetidx_wonas - 1].astype(int)
-        
+        # Get ranks of non-NA genes (convert to 0-based, ensure integer)
+        gsetidx_0based = gsetidx_wonas - 1
+        gsetrnk = decordstat[gsetidx_0based].astype(int)
+
         # Initialize step CDFs
         stepcdfingeneset = np.zeros(n)
         stepcdfoutgeneset = np.ones(n)
-        
-        # Set values for genes in gene set
-        for i in range(k_notna):
-            rank_idx = int(gsetrnk[i] - 1)  # 确保是整数
-            gene_idx = int(gsetidx_wonas[i] - 1)  # 确保是整数
-            
-            if tau == 1:
-                stepcdfingeneset[rank_idx] = symrnkstat[gene_idx]
-            else:
-                stepcdfingeneset[rank_idx] = np.power(symrnkstat[gene_idx], tau)
-            stepcdfoutgeneset[rank_idx] = 0
-        
+
+        # Vectorized: Set values for genes in gene set
+        rank_indices = gsetrnk - 1  # Convert to 0-based indexing
+
+        if tau == 1:
+            stepcdfingeneset[rank_indices] = symrnkstat[gsetidx_0based]
+        else:
+            stepcdfingeneset[rank_indices] = np.power(symrnkstat[gsetidx_0based], tau)
+
+        stepcdfoutgeneset[rank_indices] = 0
+
         # Compute cumulative sums
         stepcdfingeneset = np.cumsum(stepcdfingeneset)
         stepcdfoutgeneset = np.cumsum(stepcdfoutgeneset)
-        
+
         if stepcdfingeneset[-1] > 0 and stepcdfoutgeneset[-1] > 0:
             # Calculate walking statistic
-            wlkstat = (stepcdfingeneset / stepcdfingeneset[-1] - 
+            wlkstat = (stepcdfingeneset / stepcdfingeneset[-1] -
                       stepcdfoutgeneset / stepcdfoutgeneset[-1])
-            
+
             if return_walkstat:
                 walkstat = wlkstat
-                
+
             # Get maximum deviations
             walkstatpos = np.max(wlkstat)
             walkstatneg = np.min(wlkstat)
     else:
         wna = True
-    
+
     if return_walkstat:
-        return (walkstat if walkstat is not None else np.full(n, np.nan), 
+        return (walkstat if walkstat is not None else np.full(n, np.nan),
                 walkstatpos, walkstatneg, wna)
     return None, walkstatpos, walkstatneg, wna
 
